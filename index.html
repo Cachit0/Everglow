@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EVERGLOW</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<!-- CheerpJ: la máquina virtual de Java para el navegador (gratis para uso educativo, cargada desde su CDN) -->
+<script src="https://cjrtnc.leaningtech.com/5.0/loader.js"></script>
+<style>
+  :root {
+    --hada: #E22AF5; --luz: #7CCDDE; --flor: #BCFD18; --arbol: #FCF49E;
+    --sombra: #4E0E77; --fondo: #07020D; --texto: #FFFFFF; --gris: #8A8494;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--fondo); color: var(--texto);
+    font-family: "Press Start 2P", monospace; display: flex; flex-direction: column;
+    align-items: center; padding: 24px 16px; gap: 14px;
+  }
+  h1 {
+    margin: 0; font-size: clamp(22px, 5vw, 42px); color: var(--hada);
+    text-shadow: 3px 3px 0 var(--sombra), 0 0 18px rgba(226, 42, 245, .45);
+  }
+  .sub { margin: 0; font-size: 10px; color: var(--luz); letter-spacing: 1px; text-align: center; }
+  #marco {
+    border: 4px solid var(--luz); box-shadow: 6px 6px 0 rgba(0,0,0,.6), 0 0 30px rgba(124,205,222,.15);
+    background: #000; max-width: 100%; overflow: auto;
+  }
+  #juego { width: 1200px; height: 700px; position: relative; }
+  #cargando {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 18px; font-size: 14px; color: var(--arbol); text-align: center;
+  }
+  #cargando small { font-size: 8px; color: var(--gris); line-height: 2; }
+  .punto { animation: parpadeo 1s steps(2) infinite; }
+  @keyframes parpadeo { 50% { opacity: 0; } }
+  .ayuda { font-size: 8px; color: var(--gris); text-align: center; line-height: 2; margin: 0; }
+</style>
+</head>
+<body>
+  <h1>EVERGLOW</h1>
+  <p class="sub">LUMORA: EL BOSQUE QUE SE APAGA</p>
+
+  <div id="marco">
+    <div id="juego">
+      <div id="cargando">
+        <div>CARGANDO EL BOSQUE<span class="punto">...</span></div>
+        <small>La primera vez tarda un poco: se descarga Java para el navegador.<br>Las siguientes visitas son más rápidas.</small>
+      </div>
+    </div>
+  </div>
+
+  <p class="ayuda">Haz clic dentro del juego para usar el teclado · [H] controles · [X] sonido · [Esc] menú</p>
+
+<script>
+  // ================= AJUSTA ESTO SEGÚN LO QUE EXPORTE PROCESSING =================
+  // Nombre de la clase del juego = nombre del .jar del sketch dentro de lib (sin ".jar").
+  const CLASE_DEL_JUEGO = "Main";
+  // Los .jar de la carpeta lib que necesita el juego (escribe los nombres exactos).
+  const JARS = ["lib/Main.jar", "lib/core-4.5.7.jar"];   // core-4.5.7 = Processing 4.5.7
+  // ===============================================================================
+
+  (async () => {
+    // CheerpJ ve los archivos del servidor web dentro de /app/.
+    // "base" es la carpeta donde está esta página (sirve en tu PC y en GitHub Pages).
+    const base = "/app" + location.pathname.replace(/[^/]*$/, "");
+    const classpath = JARS.map(j => base + j).join(":");
+
+    await cheerpjInit({ version: 17 });   // Processing 4 usa Java 17
+    const contenedor = document.getElementById("juego");
+    document.getElementById("cargando").remove();
+    cheerpjCreateDisplay(1200, 700, contenedor);
+
+    // Se arranca Processing directamente, diciéndole dónde está la carpeta del sketch
+    // (ahí busca la carpeta data con sprites, fuente y sonidos).
+    await cheerpjRunMain("processing.core.PApplet", classpath,
+      "--sketch-path=" + base, "--present", "--hide-stop", CLASE_DEL_JUEGO);
+  })();
+</script>
+</body>
+</html>

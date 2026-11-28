@@ -52,7 +52,6 @@ const RADIO_FLORES_CERCA = 15; // qué tan cerca cuenta como "cerca" (en celdas)
 const ZOOM_MAX         = 6;     // acercamiento máximo
 const VELOCIDAD_ZOOM   = 1.15;  // cuánto cambia el zoom por cada paso de la rueda
 const SUAVIDAD_ZOOM    = 0.2;   // 0 a 1: más alto = zoom más rápido, más bajo = más suave
-const VELOCIDAD_CAMARA = 12;    // píxeles de pantalla por frame al mover con el teclado
 
 // ---------- Simulación: el ciclo de las hadas (paso 3) ----------
 const DT                 = 1.0 / 60;  // segundos que avanza la simulación en cada frame
@@ -100,7 +99,8 @@ const BUSQUEDA_HUIDA        = 18;   // pasos máximos que BFS busca un lugar seg
 
 // ---------- Prioridades de las hadas: sliders (paso 6) ----------
 // El jugador reparte un presupuesto de puntos entre las prioridades.
-// Subir una baja las otras: la suma siempre es PRESUPUESTO_PRIORIDADES.
+// Bajar una deja puntos libres. Subir una usa primero los libres y, si no alcanzan,
+// le quita a la prioridad que tenga más puntos. La suma nunca pasa de PRESUPUESTO_PRIORIDADES.
 const PRESUPUESTO_PRIORIDADES = 10;
 
 // ---------- Creación de la hada (DisenoHada / ADN) ----------
@@ -164,13 +164,20 @@ const PROB_NOCHE_MIXTA = 0.35;
 // una con 30 de luz, a 8. Por eso guardar mucha luz (Alimentarse) las delata.
 const VISION_POR_BRILLO = 0.28;
 const VISION_PERDER     = 1.25;  // el Veloz suelta a su presa si se aleja más de 1,25 veces lo que la ve
-// Si no ven a nadie, marchan hacia el Árbol Madre (como en un tower defense)
+// Si no ven a nadie, rondan la zona donde andan las hadas hasta verlas.
+
+// ---------- Ladrones ----------
+// Solo algunos Veloces y Rastreadores son LADRONES: no persiguen hadas, van
+// directo al Árbol Madre a robarle luz (un farol sí los distrae).
+// Los demás cazan hadas y nunca le roban al Árbol.
+const PROB_LADRON  = 0.10;   // 1 de cada 10, más o menos
+const MAX_LADRONES = 1;      // nunca hay más de un ladrón a la vez en el bosque
 
 // ---------- El Árbol Madre es la base ----------
-// Los cazadores que lo alcanzan le roban luz y las hadas hambrientas se alimentan de él.
+// Los cazadores ladrones que lo alcanzan le roban luz, y las hadas hambrientas se alimentan de él.
 // Si se queda sin luz NO se pierde (solo se pierde sin hadas), pero ya no puede
 // pagar hongos ni faroles ni alimentar a las hadas.
-const ROBO_CAZADOR     = 15;    // luz que roba un cazador al llegar al Árbol (y luego desaparece)
+const ROBO_CAZADOR     = 15;    // luz que roba un ladrón al llegar al Árbol (y luego desaparece)
 const RADIO_ROBO       = 2.5;   // a cuántas celdas del centro del Árbol cuenta como "llegó"
 const LUZ_MINIMA_ARBOL = 0;     // luz que hongos, faroles y envíos deben dejarle al Árbol (0 = se puede gastar toda)
 const ARBOL_BAJO       = 40;    // por debajo de esto aparece el aviso "Árbol bajo"

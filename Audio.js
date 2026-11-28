@@ -1,5 +1,5 @@
 // ==================================================
-// AUDIO: efectos y música de 8 bits (estilo NES)
+// AUDIO: efectos de sonido de 8 bits (estilo NES)
 // ==================================================
 // Sin librerías: usa la Web Audio API, que ya viene en todos los navegadores.
 // Los sonidos están en data/ como .wav (se pueden reemplazar por otros .wav con el mismo nombre).
@@ -11,29 +11,22 @@
 //     algo cambia toca el sonido que corresponde. Así no hubo que meter
 //     llamadas de sonido dentro de la Simulación ni de la Interfaz.
 //
+// El juego no tiene música de fondo: solo efectos (botones, menús y lo que pasa en el bosque).
+//
 // Ojo: los navegadores no dejan sonar nada hasta que el jugador hace clic o
 // aprieta una tecla. Por eso el sonido empieza con la primera tecla del login.
 //
-// Tecla [X]: todo el sonido -> solo efectos -> silencio.
+// Tecla [X]: enciende o apaga los efectos.
 
 // ---------- Ajustes ----------
 // El jugador elige el volumen en el inicio (panel SONIDO): de 0 a 10 bloques.
 // Se guarda junto con el usuario (Red).
 const VOLUMEN_EFECTOS_MAX = 1.0;   // volumen con la barra llena (0 a 1)
-const VOLUMEN_MUSICA_MAX  = 0.9;
 let nivelEfectos = 8;   // 0 a 10
-let nivelMusica  = 5;   // 0 a 10
 
 function volumenEfectos() { return VOLUMEN_EFECTOS_MAX * nivelEfectos / 10.0; }
-function volumenMusica()  { return VOLUMEN_MUSICA_MAX  * nivelMusica  / 10.0; }
 
-// La música que ya suena cambia de volumen en el acto
-function aplicarVolumenMusica() {
-  if (mezclador != null) mezclador.cambiarVolumenMusica(volumenMusica());
-}
-
-const SONIDO_TODO = 0, SONIDO_SOLO_EFECTOS = 1, SONIDO_SILENCIO = 2;
-let modoSonido = SONIDO_TODO;
+let sonidoEncendido = true;   // [X] lo cambia
 
 // Efectos: nombre del archivo (sin .wav)
 const NOMBRES_EFECTOS = [
@@ -44,7 +37,6 @@ const NOMBRES_EFECTOS = [
   "cazador", "alerta", "encerrado", "envio",
   "oleada", "calma", "noche", "inicio", "fin"
 ];
-const NOMBRES_MUSICA = [ "musica_menu", "musica_calma", "musica_amenaza" ];
 
 let sonidos = new Map();          // nombre -> sonido listo para tocar (AudioBuffer)
 let ultimaVezSonido = new Map();  // nombre -> millis() de la última vez que sonó
@@ -59,7 +51,6 @@ function iniciarAudio() {
     mezclador = null;
   } else {
     for (const n of NOMBRES_EFECTOS) cargarSonido(n);
-    for (const n of NOMBRES_MUSICA)  cargarSonido(n);
   }
   // El observador se engancha a p5: corre después de cada draw() y escucha el teclado
   observadorAudio = new ObservadorAudio();
@@ -78,7 +69,7 @@ function despertarAudio() {
 // esperaMinima: milisegundos que deben pasar antes de repetir el mismo sonido
 // (evita el ruido cuando, por ejemplo, se pintan muchos hongos seguidos)
 function sonar(nombre, volumen = 1, esperaMinima = 60) {
-  if (mezclador == null || modoSonido == SONIDO_SILENCIO) return;
+  if (mezclador == null || !sonidoEncendido) return;
   let antes = ultimaVezSonido.get(nombre);
   if (antes != null && millis() - antes < esperaMinima) return;
   let datos = sonidos.get(nombre);
@@ -87,20 +78,10 @@ function sonar(nombre, volumen = 1, esperaMinima = 60) {
   mezclador.tocar(datos, volumen * volumenEfectos());
 }
 
-// Cambia la música de fondo ("" = ninguna). Si ya suena esa, no hace nada.
-function ponerMusica(nombre) {
-  if (mezclador == null) return;
-  if (modoSonido != SONIDO_TODO) nombre = "";
-  // si la pista todavía se está descargando, se vuelve a intentar en el próximo frame
-  if (nombre != "" && sonidos.get(nombre) == null) return;
-  mezclador.cambiarMusica(nombre, sonidos.get(nombre), volumenMusica());
-}
-
 function alternarSonido() {
-  modoSonido = (modoSonido + 1) % 3;
-  if (modoSonido == SONIDO_TODO)         mostrarAviso("Sonido: música y efectos  [X]", 1800);
-  if (modoSonido == SONIDO_SOLO_EFECTOS) mostrarAviso("Sonido: solo efectos  [X]", 1800);
-  if (modoSonido == SONIDO_SILENCIO)     mostrarAviso("Sonido: silencio  [X]", 1800);
+  sonidoEncendido = !sonidoEncendido;
+  if (sonidoEncendido) mostrarAviso("Sonido: encendido  [X]", 1800);
+  else                 mostrarAviso("Sonido: silencio  [X]", 1800);
 }
 
 // ---------- Cargar un .wav de la carpeta data ----------
@@ -120,16 +101,13 @@ function cargarSonido(nombre) {
 // El mezclador: cada sonido es una "voz" que pasa por su propio volumen
 // ==================================================
 // En Java había que sumar las voces a mano en un hilo aparte;
-// el navegador ya mezcla solo: aquí se lleva la cuenta de las voces y la música.
+// el navegador ya mezcla solo: aquí se lleva la cuenta de las voces.
 const MAX_VOCES = 24;      // tope de voces: se corta la más vieja
-const FUNDIDO_MUSICA = 0.6; // segundos que tarda la música en entrar o irse
 
 class MezcladorChip {
   contexto = null;
   salida = null;     // volumen general
   voces = [];
-  musica = null;     // { fuente, volumen }
-  nombreMusica = "";
 
   abrir() {
     const ClaseAudio = window.AudioContext || window.webkitAudioContext;
@@ -145,10 +123,9 @@ class MezcladorChip {
   }
 
   // Una voz = el sonido + su volumen
-  crearVoz(buffer, volumen, bucle) {
+  crearVoz(buffer, volumen) {
     const fuente = this.contexto.createBufferSource();
     fuente.buffer = buffer;
-    fuente.loop = bucle;
     const gan = this.contexto.createGain();
     gan.gain.value = volumen;
     fuente.connect(gan);
@@ -163,30 +140,9 @@ class MezcladorChip {
       const vieja = this.voces.remove(0);
       try { vieja.fuente.stop(); } catch (e) {}
     }
-    const voz = this.crearVoz(buffer, volumen, false);
+    const voz = this.crearVoz(buffer, volumen);
     this.voces.add(voz);
     voz.fuente.onended = () => this.voces.remove(voz);
-  }
-
-  cambiarVolumenMusica(volumen) {
-    if (this.musica != null) this.musica.volumen.gain.setTargetAtTime(volumen, this.contexto.currentTime, 0.05);
-  }
-
-  // La música vieja se desvanece y la nueva entra suave
-  cambiarMusica(nombre, buffer, volumen) {
-    if (this.contexto.state != "running") return;   // se reintenta en el próximo frame
-    if (nombre.equals(this.nombreMusica)) return;
-    this.nombreMusica = nombre;
-    const ahora = this.contexto.currentTime;
-    if (this.musica != null) {
-      const vieja = this.musica;
-      vieja.volumen.gain.setTargetAtTime(0, ahora, FUNDIDO_MUSICA / 3);
-      vieja.fuente.stop(ahora + FUNDIDO_MUSICA * 2);
-      this.musica = null;
-    }
-    if (buffer == null || nombre.equals("")) return;
-    this.musica = this.crearVoz(buffer, 0, true);
-    this.musica.volumen.gain.setTargetAtTime(volumen, ahora, FUNDIDO_MUSICA / 3);
   }
 }
 
@@ -222,7 +178,6 @@ class ObservadorAudio {
     if (!this.listo) {
       this.recordarTodo();
       this.listo = true;
-      this.actualizarMusica();
       return;
     }
 
@@ -245,7 +200,7 @@ class ObservadorAudio {
 
     // Interfaz
     if (herramienta != this.herramientaAnt) sonar("clic");
-    if (paginaTutorial != this.paginaAnt) sonar("clic");
+    if (pasoTutorial != this.paginaAnt) sonar("clic");   // Tutorial: cambió de paso
     if (pausa != this.pausaAnt) sonar("pausa");
     if (mostrarRutas != this.rutasAnt || mostrarReticula != this.reticulaAnt || mostrarAyuda != this.ayudaAnt) sonar("tick");
     if (this.codigoPuntos() != this.puntosAnt) sonar("tick", 0.8, 50);
@@ -266,7 +221,6 @@ class ObservadorAudio {
     else if (pantalla == PANTALLA_JUEGO) this.escucharSimulacion();
 
     this.recordarTodo();
-    this.actualizarMusica();
   }
 
   escucharSimulacion() {
@@ -331,21 +285,11 @@ class ObservadorAudio {
     if (partidaTerminada && !this.terminadaAnt) sonar("fin");
   }
 
-  // ---------- Música según la pantalla y la fase ----------
-  actualizarMusica() {
-    let pista;
-    if (pantalla != PANTALLA_JUEGO) pista = "musica_menu";
-    else if (finDelJuego() || pausa) pista = "";
-    else if (fase == AMENAZA || esDeNoche()) pista = "musica_amenaza";
-    else pista = "musica_calma";
-    ponerMusica(pista);
-  }
-
   // ---------- Recordar el estado actual ----------
   recordarTodo() {
     this.pantallaAnt = pantalla;
     this.herramientaAnt = herramienta;
-    this.paginaAnt = paginaTutorial;
+    this.paginaAnt = pasoTutorial;
     this.pausaAnt = pausa;
     this.rutasAnt = mostrarRutas;
     this.reticulaAnt = mostrarReticula;

@@ -85,7 +85,7 @@ function actualizarSimulacion() {
   if (pausa) return;
   tiempoJuego += DT;
 
-  actualizarFases();                      // calma / amenaza
+  if (!modoTutorial) actualizarFases();   // calma / amenaza (en el tutorial el día no avanza)
   recargarFlores();                       // RECURSO + GENERADOR
   for (const h of hadas) h.actualizar();    // AGENTES
   actualizarFaroles();
@@ -178,6 +178,7 @@ class Hada {
 
     // Regla 1: vivir gasta luz. Sin luz, el hada se apaga.
     this.luz -= this.adn.gasto * DT;
+    if (modoTutorial) this.luz = max(this.luz, this.adn.luzMax * 0.3);   // en el tutorial no se apagan
     if (this.luz <= 0) {
       this.luz = 0;
       this.estado = MUERTA;
@@ -247,6 +248,10 @@ class Hada {
 
   // La atrapó un cazador
   atrapada() {
+    if (modoTutorial) {   // en el tutorial no se apagan: solo quedan con poca luz
+      this.luz = this.adn.luzMax * 0.3;
+      return;
+    }
     hadasAtrapadas++;
     this.luz = 0;
     this.ruta = null;
@@ -540,6 +545,13 @@ function actualizarFaroles() {
   }
 }
 
+// Cuántos ladrones hay ahora en el bosque (para que nunca sean muchos)
+function ladronesActivos() {
+  let n = 0;
+  for (const cz of cazadores) if (cz.ladron && !cz.retirandose) n++;
+  return n;
+}
+
 function cazadoresActivos() {
   let n = 0;
   for (const cz of cazadores) if (cz.activo()) n++;
@@ -555,12 +567,8 @@ function contarCazadores(tipo) {
 // Aparece en un borde del mapa. Devuelve null si ya hay demasiados.
 // "nocturno" = apareció durante la amenaza (se va cuando termina);
 // si no, apareció de día (se va al anochecer).
-function aparecerCazador(tipo) {
-  return aparecerCazador(tipo, false);
-}
-
 // sinTope = true: los cazadores que envía otro jugador llegan aunque el bosque ya tenga MAX_CAZADORES
-function aparecerCazador(tipo, sinTope) {
+function aparecerCazador(tipo, sinTope = false) {
   if (!sinTope && cazadoresActivos() >= MAX_CAZADORES) return null;
   let p = puntoDeAparicion();
   if (p == null) return null;
@@ -625,6 +633,8 @@ class Cazador {
   retirandose = false;  // se le acabó el tiempo: se desvanece
   alfa = 1;               // opacidad al dibujarlo
   atrapadas = 0;            // hadas que apagó (o flores, el Trampero)
+  ladron = false;           // true = va al Árbol a robarle luz en vez de cazar hadas
+  patrullaC = -1;patrullaF = -1;   // flor que ronda mientras no ve ninguna hada
 
   ruta = null;
   paso = 0;
@@ -638,6 +648,8 @@ class Cazador {
     this.tipo = tipo;
     this.x = x;
     this.y = y;
+    // Solo uno que otro va por la luz del Árbol (el Trampero nunca: él destruye flores)
+    this.ladron = (tipo != TRAMPERO) && ladronesActivos() < MAX_LADRONES && random(1) < PROB_LADRON;
   }
 
   activo() { return !this.encerrado && !this.retirandose; }
@@ -677,8 +689,8 @@ class Cazador {
   // ---------- Veloz y Rastreador ----------
 
   perseguir() {
-    // ¿Llegó al Árbol Madre? Le roba luz y desaparece (como un enemigo que llega a la base)
-    if (dist(this.x, this.y, centroX(arbolCol), centroY(arbolFila)) < RADIO_ROBO * TAM_CELDA) {
+    // ¿Un ladrón llegó al Árbol Madre? Le roba luz y desaparece (como un enemigo que llega a la base)
+    if (this.ladron && dist(this.x, this.y, centroX(arbolCol), centroY(arbolFila)) < RADIO_ROBO * TAM_CELDA) {
       this.robarAlArbol();
       return;
     }
@@ -730,11 +742,18 @@ class Cazador {
     this.esperaReplan -= DT;
     if (this.esperaReplan <= 0 || (this.ruta != null && this.paso >= this.ruta.size())) {
       this.elegirObjetivo();           // vuelve a mirar qué luz tiene a la vista
-      let metaC = arbolCol;       // si no ve a nadie, marcha hacia el Árbol
-      let metaF = arbolFila;
+      let metaC, metaF;
       if (this.objetivoHada != null || this.objetivoFarol != null) {
         metaC = celdaX(this.objetivoX());
         metaF = celdaY(this.objetivoY());
+      } else if (this.ladron) {
+        metaC = arbolCol;              // el ladrón va directo al Árbol
+        metaF = arbolFila;
+      } else {
+        this.elegirPatrulla();         // los demás rondan buscando hadas
+        if (this.patrullaC < 0) { this.esperaReplan = 0.2; return; }   // punto no válido: otro pronto
+        metaC = this.patrullaC;
+        metaF = this.patrullaF;
       }
       if (this.tipo == VELOZ) this.ruta = aEstrella(celdaX(this.x), celdaY(this.y), metaC, metaF);   // Herramientas
       else               this.ruta = bfs(celdaX(this.x), celdaY(this.y), metaC, metaF);         // Herramientas
@@ -774,6 +793,7 @@ class Cazador {
       return;
     }
     this.objetivoFarol = null;
+    if (this.ladron) return;   // el ladrón no se fija en las hadas: solo quiere la luz del Árbol
 
     if (this.objetivoHada != null && this.objetivoHada.estado != MUERTA) {
       // El Rastreador no suelta a su presa (hasta que se cansa: ver perseguir)
@@ -795,6 +815,26 @@ class Cazador {
         this.objetivoHada = h;
       }
     }
+  }
+
+  // Sin hadas a la vista: ronda la zona donde anda alguna hada (sienten que ahí hay luz,
+  // pero no la ven hasta acercarse). Mantiene el rumbo hasta llegar, así no cambia a cada rato.
+  elegirPatrulla() {
+    let llego = dist(this.x, this.y, centroX(this.patrullaC), centroY(this.patrullaF)) < TAM_CELDA * 3;
+    if (this.patrullaC >= 0 && !llego) return;
+    let vivas = [];
+    for (const h of hadas) if (h.estado != MUERTA) vivas.add(h);
+    if (vivas.size() > 0) {
+      let h = vivas.get(int(random(vivas.size())));
+      // Un punto cerca del hada, no exacto: la busca por la zona
+      this.patrullaC = constrain(celdaX(h.x) + int(random(-6, 7)), 0, COLUMNAS - 1);
+      this.patrullaF = constrain(celdaY(h.y) + int(random(-6, 7)), 0, FILAS - 1);
+    } else {
+      this.patrullaC = constrain(arbolCol + int(random(-12, 13)), 0, COLUMNAS - 1);
+      this.patrullaF = constrain(arbolFila + int(random(-12, 13)), 0, FILAS - 1);
+    }
+    // Si el punto es un hongo o niebla cerrada, se busca otro en el próximo intento
+    if (!transitable(this.patrullaC, this.patrullaF)) this.patrullaC = -1;
   }
 
   // Llegó a la base: le roba luz al Árbol y se desvanece

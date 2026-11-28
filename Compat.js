@@ -222,6 +222,8 @@ class JSONObject {
   getInt(k, porDefecto = 0) { return Math.trunc(Number(this.leer(k, porDefecto))); }
   getLong(k, porDefecto = 0) { return this.getInt(k, porDefecto); }
   getFloat(k, porDefecto = 0) { return Number(this.leer(k, porDefecto)); }
+  getBoolean(k, porDefecto = false) { return this.leer(k, porDefecto) === true; }
+  setBoolean(k, v) { this.datos[k] = (v == true); return this; }
   getJSONObject(k) {
     const v = this.datos[k];
     return (v != null && typeof v === "object") ? new JSONObject(v) : null;

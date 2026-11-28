@@ -25,7 +25,7 @@ function setup() {
   cargarUsuario();   // Red: el nombre guardado de la última vez
   iniciarCicloDeRed();   // Red: rivales en línea y cazadores enviados (en segundo plano)
   irAlLogin();       // Interfaz: siempre se pregunta quién juega (con el último nombre ya escrito)
-  iniciarAudio();    // Audio: efectos y música de 8 bits ([X] cambia el sonido)
+  iniciarAudio();    // Audio: efectos de sonido de 8 bits ([X] los enciende o apaga)
 }
 
 function nuevaPartida(nuevaSemilla) {
@@ -42,10 +42,10 @@ function draw() {
   // Pantallas de menú (Interfaz): la simulación queda quieta mientras tanto
   if (pantalla == PANTALLA_LOGIN)    { dibujarLogin();    return; }
   if (pantalla == PANTALLA_INICIO)   { dibujarInicio();   return; }
-  if (pantalla == PANTALLA_TUTORIAL) { dibujarTutorial(); return; }
   if (pantalla == PANTALLA_HADA)     { dibujarDisenoHada(); return; }   // DisenoHada
 
   actualizarCamara();      // Interfaz
+  if (modoTutorial) actualizarTutorial();   // Tutorial: revisa si el jugador hizo lo que se pide
   procesarCazadoresRecibidos();   // Red: avisa si un rival te mandó un cazador
   actualizarSimulacion();  // Simulacion
 
@@ -61,6 +61,7 @@ function draw() {
   pop();
 
   dibujarEstado();         // Renderizado: en coordenadas de pantalla
+  if (modoTutorial) dibujarTutorial();   // Tutorial: la caja con el paso actual, encima de todo
   // Los sonidos los toca Audio solo, después de cada draw() (mira qué cambió en el juego)
 }
 
@@ -86,6 +87,7 @@ function keyPressed() {
     irAlInicio();        // Interfaz
     return false;
   }
+  if (modoTutorial && teclaEnTutorial()) return false;   // Tutorial: Enter = siguiente paso
   if (key == 'h' || key == 'H') mostrarAyuda = !mostrarAyuda;   // Interfaz: controles
   // Pantalla de resultado: Enter = jugar otra vez el bosque del día
   if (finDelJuego() && key == ENTER) {
@@ -93,7 +95,7 @@ function keyPressed() {
     return false;
   }
 
-  if (key == 'r' || key == 'R') {
+  if ((key == 'r' || key == 'R') && !modoTutorial) {
     // Bosque al azar = partida de práctica (no entra al ranking del bosque del día)
     nuevaPartida(int(millis()) % 100000 + 1);
     mostrarAviso("Bosque al azar: partida de práctica, no entra al ranking", 3500);
@@ -111,18 +113,11 @@ function keyPressed() {
   if (key == 'e' || key == 'E') pedirCazador(VELOZ);
   if (key == 't' || key == 'T') pedirCazador(TRAMPERO);
   if (key == 'b' || key == 'B') pedirCazador(RASTREADOR);
-  teclaCamara(true);       // Interfaz: empieza a mover con WASD/flechas
   return false;
 }
 
 function pedirCazador(tipo) {
   if (aparecerCazador(tipo) == null) mostrarMensaje("Ya hay " + MAX_CAZADORES + " cazadores en el bosque");   // Simulacion / Interfaz
-}
-
-function keyReleased() {
-  traducirTecla();
-  teclaCamara(false);      // Interfaz: deja de mover
-  return false;
 }
 
 // ---------- Mouse ----------
@@ -135,7 +130,7 @@ function mouseWheel(evento) {
 function mousePressed() {
   if (mouseButton != LEFT) return;
   if (pantalla != PANTALLA_JUEGO) {
-    clicEnMenu();       // Interfaz: botones del inicio y del tutorial
+    clicEnMenu();       // Interfaz: botones del inicio
     return;
   }
   if (finDelJuego()) {          // pantalla de resultado
@@ -146,6 +141,7 @@ function mousePressed() {
     mostrarAyuda = false;
     return;
   }
+  if (modoTutorial && clicEnTutorial()) return;        // Tutorial: botones de la caja de pasos
   if (plegableMarcador.clic()) return;                 // Interfaz: esconder/mostrar el marcador
   if (plegablePrioridades.clic()) return;              // Interfaz: esconder/mostrar las prioridades
   if (clicEnBarraHerramientas()) return;               // Interfaz: elegir hongo o farol

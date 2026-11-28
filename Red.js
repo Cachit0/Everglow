@@ -103,6 +103,7 @@ function cargarUsuario() {
   if (datos == null) return;
   nombreJugador = datos.getString("nombre", "");
   // Estilo de la hada (DisenoHada / ADN): si no hay, queda el de por defecto
+  hadaCreada = datos.getBoolean("hadaCreada", false);   // DisenoHada: si es false, empieza con 0 puntos repartidos
   if (datos.hasKey("hada")) {
     let h = datos.getJSONObject("hada");
     familia.cuerpo   = constrain(h.getFloat("cuerpo", 0.5), 0, 1);
@@ -114,7 +115,6 @@ function cargarUsuario() {
   // Volumen elegido en el panel SONIDO (Audio)
   if (datos.hasKey("sonido")) {
     let s = datos.getJSONObject("sonido");
-    nivelMusica  = constrain(s.getInt("musica", nivelMusica), 0, 10);
     nivelEfectos = constrain(s.getInt("efectos", nivelEfectos), 0, 10);
   }
 }
@@ -128,8 +128,8 @@ function guardarUsuario() {
   h.setFloat("brillo", familia.brillo);
   h.setFloat("variedad", familia.variedad);
   datos.setJSONObject("hada", h);
+  datos.setBoolean("hadaCreada", hadaCreada);
   let s = new JSONObject();
-  s.setInt("musica", nivelMusica);
   s.setInt("efectos", nivelEfectos);
   datos.setJSONObject("sonido", s);
   escribirGuardado("usuario.json", datos.toString());
@@ -299,7 +299,7 @@ function iniciarCicloDeRed() {
 
 async function cicloDeRed() {
   try {
-    let jugando = pantalla == PANTALLA_JUEGO && !finDelJuego();
+    let jugando = pantalla == PANTALLA_JUEGO && !finDelJuego() && !modoTutorial;
     if (hayFirebase() && jugando && !nombreJugador.equals("")) {
       await publicarMiEstado();
       await descargarRivales();

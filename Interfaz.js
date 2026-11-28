@@ -17,9 +17,6 @@ let zoomObjetivo = 1;     // zoom al que se quiere llegar
 let anclaPantallaX, anclaPantallaY;  // dónde estaba el mouse al girar la rueda
 let anclaMundoX, anclaMundoY;        // qué punto del mundo había debajo del mouse
 
-// Teclas de movimiento presionadas (flechas o WASD)
-let teclaArriba, teclaAbajo, teclaIzquierda, teclaDerecha;
-
 function anchoMundo() { return COLUMNAS * TAM_CELDA; }
 function altoMundo() { return FILAS * TAM_CELDA; }
 
@@ -30,17 +27,10 @@ function aplicarCamara() {
 }
 
 // ---------- Se llama una vez por frame ----------
+// La cámara se maneja solo con el mouse: clic derecho + arrastrar para moverla
+// (arrastrarCamara) y la rueda para el zoom (zoomConRueda).
 function actualizarCamara() {
-  // 1) Movimiento con teclado (más lento cuando hay más zoom)
-  let paso = VELOCIDAD_CAMARA / zoom;
-  let dx = 0, dy = 0;
-  if (teclaIzquierda) dx -= paso;
-  if (teclaDerecha)   dx += paso;
-  if (teclaArriba)    dy -= paso;
-  if (teclaAbajo)     dy += paso;
-  moverCamara(dx, dy);
-
-  // 2) Zoom suave hacia el objetivo, dejando fijo el punto que está bajo el mouse
+  // Zoom suave hacia el objetivo, dejando fijo el punto que está bajo el mouse
   if (abs(zoom - zoomObjetivo) > 0.001) {
     zoom = lerp(zoom, zoomObjetivo, SUAVIDAD_ZOOM);
     if (abs(zoom - zoomObjetivo) < 0.001) zoom = zoomObjetivo;
@@ -101,21 +91,6 @@ function zoomMinimo() {
 function limitarCamara() {
   camX = constrain(camX, 0, max(0, anchoMundo() - width / zoom));
   camY = constrain(camY, 0, max(0, altoMundo() - height / zoom));
-}
-
-// ---------- Teclado ----------
-function teclaCamara(presionada) {
-  if (key == CODED) {
-    if (keyCode == UP_ARROW)    teclaArriba    = presionada;
-    if (keyCode == DOWN_ARROW)  teclaAbajo     = presionada;
-    if (keyCode == LEFT_ARROW)  teclaIzquierda = presionada;
-    if (keyCode == RIGHT_ARROW) teclaDerecha   = presionada;
-  } else {
-    if (key == 'w' || key == 'W') teclaArriba    = presionada;
-    if (key == 's' || key == 'S') teclaAbajo     = presionada;
-    if (key == 'a' || key == 'A') teclaIzquierda = presionada;
-    if (key == 'd' || key == 'D') teclaDerecha   = presionada;
-  }
 }
 
 // ---------- Conversiones pantalla <-> mundo ----------
@@ -250,7 +225,8 @@ function sobreInterfaz() {
   let sobreFase = mouseX >= width - ANCHO_PANEL_FASE - 10 && mouseX <= width - 10 && mouseY >= 10 && mouseY <= 10 + ALTO_PANEL_FASE;
   let sobreAlgoritmos = mostrarRutas && mouseX >= PANEL_X && mouseX <= PANEL_X + PANEL_ANCHO
                             && mouseY >= PANEL_Y + PANEL_ALTO + 10 && mouseY <= PANEL_Y + PANEL_ALTO + 10 + ALTO_PANEL_ALGORITMOS;
-  return sobrePanel() || sobreFase || sobreAlgoritmos || sobreBarraHerramientas() || sobrePanelRivales() || prioridades.contiene(mouseX, mouseY);
+  return sobrePanel() || sobreFase || sobreAlgoritmos || sobreBarraHerramientas() || sobrePanelRivales() || prioridades.contiene(mouseX, mouseY)
+         || sobreCajaTutorial();   // Tutorial
 }
 
 // ---------- Barra de herramientas (abajo al centro) ----------
@@ -280,10 +256,9 @@ function clicEnBarraHerramientas() {
 // ==================================================
 // Clase propia en vez de ControlP5: no hay que instalar librerías
 // y se puede dibujar con el mismo estilo del juego.
-// Los sliders comparten un presupuesto: subir uno baja los demás,
-// así que la suma siempre es PRESUPUESTO_PRIORIDADES.
-// Hoy son dos (Alimentarse y Huir); para agregar Cuidar o Reproducirse
-// basta con sumar otro Slider al arreglo.
+// Los sliders comparten un presupuesto de PRESUPUESTO_PRIORIDADES puntos (ver
+// PanelPrioridades.mover): bajar uno deja puntos libres; subir uno usa los libres
+// y, si no alcanzan, le quita al que tenga más.
 
 class Slider {
   nombre = null;
@@ -320,6 +295,7 @@ class Slider {
 class PanelPrioridades {
   sliders = null;
   arrastrando = -1;   // índice del slider que se está moviendo (-1 = ninguno)
+  donante = -1;       // de qué slider se sacan los puntos mientras se arrastra
   x = 0;y = 0;ancho = 0;alto = 0;
 
   constructor(sliders) {
@@ -366,27 +342,49 @@ class PanelPrioridades {
 
   soltar() {
     this.arrastrando = -1;
+    this.donante = -1;   // el próximo cambio vuelve a elegir al más alto
   }
 
-  // Cambia un slider y reparte la diferencia entre los demás para respetar el presupuesto
-  mover(i, nuevo) {
-    let diferencia = nuevo - this.sliders[i].valor;
-    this.sliders[i].valor = nuevo;
-    // Si subió, se le quita a los otros (primero al que tenga más); si bajó, se les da
-    let vueltas = 0;
-    while (diferencia != 0 && vueltas < 100) {
-      vueltas++;
-      let elegido = -1;
-      for (let j = 0; j < this.sliders.length; j++) {
-        if (j == i) continue;
-        if (diferencia > 0 && this.sliders[j].valor > 0 && (elegido < 0 || this.sliders[j].valor > this.sliders[elegido].valor)) elegido = j;
-        if (diferencia < 0 && this.sliders[j].valor < PRESUPUESTO_PRIORIDADES && (elegido < 0 || this.sliders[j].valor < this.sliders[elegido].valor)) elegido = j;
-      }
-      if (elegido < 0) break;
-      if (diferencia > 0) { this.sliders[elegido].valor--; diferencia--; }
-      else                { this.sliders[elegido].valor++; diferencia++; }
+  // Puntos que nadie está usando
+  puntosLibres() {
+    let usados = 0;
+    for (const s of this.sliders) usados += s.valor;
+    return PRESUPUESTO_PRIORIDADES - usados;
+  }
+
+  // El slider con más puntos, sin contar el que se está moviendo (-1 si todos están en 0)
+  masAlto(sinContar) {
+    let elegido = -1;
+    for (let j = 0; j < this.sliders.length; j++) {
+      if (j == sinContar || this.sliders[j].valor == 0) continue;
+      if (elegido < 0 || this.sliders[j].valor > this.sliders[elegido].valor) elegido = j;
     }
-    if (diferencia != 0) this.sliders[i].valor -= diferencia;   // no se pudo repartir todo
+    return elegido;
+  }
+
+  // Cambia un slider:
+  //   - Si BAJA: solo baja. Los puntos quedan libres y los demás no se tocan.
+  //   - Si SUBE: primero usa los puntos libres. Si no alcanzan, le quita al slider
+  //     que tenga más puntos (siempre al mismo mientras se arrastra; si llega a 0,
+  //     sigue con el siguiente más alto).
+  mover(i, nuevo) {
+    let s = this.sliders[i];
+    if (nuevo <= s.valor) {
+      s.valor = nuevo;
+      aplicarPrioridades();
+      return;
+    }
+    let falta = nuevo - s.valor;
+    let libres = min(falta, this.puntosLibres());
+    s.valor += libres;
+    falta -= libres;
+    while (falta > 0) {
+      if (this.donante < 0 || this.donante == i || this.sliders[this.donante].valor == 0) this.donante = this.masAlto(i);
+      if (this.donante < 0) break;   // ya no hay de dónde sacar
+      this.sliders[this.donante].valor--;
+      s.valor++;
+      falta--;
+    }
     aplicarPrioridades();
   }
 
@@ -401,7 +399,9 @@ class PanelPrioridades {
     for (const s of this.sliders) if (s.contiene(mouseX, mouseY)) encima = s;
     if (encima == null) {
       textoPixel("PRIORIDADES", this.x + 14, this.y + 12, 8, COLOR_INTERFAZ);
-      textoPixel(PRESUPUESTO_PRIORIDADES + " PTS", this.x + this.ancho - 14, this.y + 12, 8, COLOR_GRIS, RIGHT);
+      let libres = this.puntosLibres();
+      if (libres > 0) textoPixel("LIBRES " + libres, this.x + this.ancho - 14, this.y + 12, 8, COLOR_ARBOL, RIGHT);
+      else            textoPixel(PRESUPUESTO_PRIORIDADES + " PTS", this.x + this.ancho - 14, this.y + 12, 8, COLOR_GRIS, RIGHT);
     } else {
       textFont(fuenteTexto);
       textSize(12);
@@ -437,10 +437,10 @@ function aplicarPrioridades() {
 //   logro       -> sobrevivir rondas, nuevas hadas, cazadores encerrados
 //   frustración -> hadas atrapadas o apagadas, "El bosque se apagó"
 
-const PANTALLA_INICIO = 0, PANTALLA_TUTORIAL = 1, PANTALLA_JUEGO = 2, PANTALLA_LOGIN = 3, PANTALLA_HADA = 4;
+// "Cómo jugar" ya no es una pantalla aparte: es un tutorial interactivo
+// que se juega dentro de la pantalla de juego (ver Tutorial.js).
+const PANTALLA_INICIO = 0, PANTALLA_JUEGO = 2, PANTALLA_LOGIN = 3, PANTALLA_HADA = 4;
 let pantalla = PANTALLA_INICIO;
-let paginaTutorial = 0;
-const PAGINAS_TUTORIAL = 5;
 let hayPartidaEnCurso = false;   // para mostrar "Continuar" en el inicio
 
 // ---------- Botones ----------
@@ -501,8 +501,6 @@ class Boton {
 
 // Botones del inicio (se ubican cada vez que se dibujan)
 let botonJugar, botonContinuar, botonComoJugar;
-// Botones del tutorial
-let botonAnterior, botonSiguiente, botonVolver;
 
 function crearBotonesInicio() {
   let ancho = 340, alto = 46, x = width / 2 - ancho / 2, y = 326;
@@ -522,67 +520,54 @@ function crearBotonesInicio() {
 // ==================================================
 // Panel SONIDO (en el inicio, debajo de "Cómo jugar")
 // ==================================================
-// Dos barras de 10 bloques, como las de las prioridades. Con Esc se vuelve
-// al inicio (la partida queda en pausa) y desde aquí se ajusta el volumen.
-let sliderMusica, sliderEfectos;   // se crean en iniciarInterfaz()
+// Una barra de 10 bloques, como las de las prioridades, para el volumen de los
+// efectos (el juego no tiene música). Con Esc se vuelve al inicio (la partida
+// queda en pausa) y desde aquí se ajusta el volumen.
+let sliderEfectos;   // se crea en iniciarInterfaz()
 let panelSonidoX, panelSonidoY, panelSonidoAncho;
-const ALTO_PANEL_SONIDO = 78;
-let arrastrandoSonido = -1;   // 0 = música, 1 = efectos, -1 = ninguno
+const ALTO_PANEL_SONIDO = 56;
+let arrastrandoSonido = false;
 
 function ubicarPanelSonido(x, y, ancho) {
   panelSonidoX = x;
   panelSonidoY = y;
   panelSonidoAncho = ancho;
-  let barras = [ sliderMusica, sliderEfectos ];
-  for (let i = 0; i < 2; i++) {
-    barras[i].x = x + 14 + ANCHO_ETIQUETA_SLIDER;
-    barras[i].y = y + 32 + i * ALTO_FILA_SLIDER;
-    barras[i].ancho = ancho - 28 - ANCHO_ETIQUETA_SLIDER - 26;
-  }
-  // Los niveles de Audio son los que mandan (pueden venir de usuario.json)
-  sliderMusica.valor = nivelMusica;
+  sliderEfectos.x = x + 14 + ANCHO_ETIQUETA_SLIDER;
+  sliderEfectos.y = y + 32;
+  sliderEfectos.ancho = ancho - 28 - ANCHO_ETIQUETA_SLIDER - 26;
+  // El nivel de Audio es el que manda (puede venir de lo guardado)
   sliderEfectos.valor = nivelEfectos;
 }
 
 function dibujarPanelSonido() {
   marcoArcade(panelSonidoX, panelSonidoY, panelSonidoAncho, ALTO_PANEL_SONIDO, COLOR_LUZ);
   textoPixel("SONIDO", panelSonidoX + 14, panelSonidoY + 12, 8, COLOR_INTERFAZ);
-  let modo = (modoSonido == SONIDO_TODO) ? "[X] TODO" : (modoSonido == SONIDO_SOLO_EFECTOS) ? "[X] SOLO EFECTOS" : "[X] SILENCIO";
-  textoPixel(modo, panelSonidoX + panelSonidoAncho - 14, panelSonidoY + 12, 8, modoSonido == SONIDO_TODO ? COLOR_GRIS : COLOR_ARBOL, RIGHT);
-  sliderMusica.dibujar();
+  let modo = sonidoEncendido ? "[X] ENCENDIDO" : "[X] SILENCIO";
+  textoPixel(modo, panelSonidoX + panelSonidoAncho - 14, panelSonidoY + 12, 8, sonidoEncendido ? COLOR_GRIS : COLOR_ARBOL, RIGHT);
   sliderEfectos.dibujar();
 }
 
-// Devuelve true si el clic cayó en una de las barras
+// Devuelve true si el clic cayó en la barra
 function clicEnSonido() {
-  if (sliderMusica.contiene(mouseX, mouseY))  arrastrandoSonido = 0;
-  else if (sliderEfectos.contiene(mouseX, mouseY)) arrastrandoSonido = 1;
-  else return false;
+  if (!sliderEfectos.contiene(mouseX, mouseY)) return false;
+  arrastrandoSonido = true;
   arrastrarSonido();
   return true;
 }
 
 function arrastrarSonido() {
-  if (arrastrandoSonido == 0) {
-    let nuevo = sliderMusica.valorEn(mouseX);
-    if (nuevo != nivelMusica) {
-      nivelMusica = nuevo;
-      aplicarVolumenMusica();   // Audio: se oye el cambio en el acto
-    }
-  } else if (arrastrandoSonido == 1) {
-    let nuevo = sliderEfectos.valorEn(mouseX);
-    if (nuevo != nivelEfectos) {
-      nivelEfectos = nuevo;
-      sonar("tick", 1, 0);      // Audio: una muestra del volumen nuevo
-    }
+  if (!arrastrandoSonido) return;
+  let nuevo = sliderEfectos.valorEn(mouseX);
+  if (nuevo != nivelEfectos) {
+    nivelEfectos = nuevo;
+    sonar("tick", 1, 0);      // Audio: una muestra del volumen nuevo
   }
-  sliderMusica.valor = nivelMusica;
   sliderEfectos.valor = nivelEfectos;
 }
 
 function soltarSonido() {
-  if (arrastrandoSonido < 0) return;
-  arrastrandoSonido = -1;
+  if (!arrastrandoSonido) return;
+  arrastrandoSonido = false;
   guardarUsuario();   // Red: se recuerda para la próxima vez
 }
 
@@ -603,17 +588,10 @@ function clicEnFin() {
   return false;
 }
 
-function crearBotonesTutorial() {
-  let y = height - 128;
-  botonVolver    = new Boton("Inicio", 186, y, 200, 44, COLOR_INTERFAZ);
-  botonAnterior  = new Boton("< Atrás", width / 2 - 100, y, 200, 44, COLOR_LUZ);
-  let ultima = (paginaTutorial == PAGINAS_TUTORIAL - 1);
-  botonSiguiente = new Boton(ultima ? "¡A jugar!" : "Sigue >", width - 386, y, 200, 44, ultima ? COLOR_HADA : COLOR_LUZ);
-}
-
 // ---------- Navegación ----------
 
 function irAlInicio() {
+  if (modoTutorial) salirDelTutorial();   // Tutorial: se deja el bosque de práctica
   pantalla = PANTALLA_INICIO;
   hayPartidaEnCurso = !finDelJuego() && tiempoJuego > 0;
   vistaInicial();   // de fondo se ve todo el bosque
@@ -630,12 +608,8 @@ function irAlLogin() {
   nombrePrecargado = !nombreJugador.equals("");
 }
 
-function irAlTutorial() {
-  pantalla = PANTALLA_TUTORIAL;
-  paginaTutorial = 0;
-}
-
 function empezarJuego() {
+  if (modoTutorial) salirDelTutorial();   // Tutorial
   nuevaPartida(semillaDelDia);   // Main: el bosque del día (el que se ve de fondo); entra al ranking
   pantalla = PANTALLA_JUEGO;
   mostrarAviso("Objetivo: que no se apague la última hada. Cuantas más sigan encendidas, mejor.", 6000);
@@ -647,15 +621,6 @@ function continuarJuego() {
   centrarEn(centroX(arbolCol), centroY(arbolFila));
 }
 
-function cambiarPaginaTutorial(cambio) {
-  let nueva = paginaTutorial + cambio;
-  if (nueva >= PAGINAS_TUTORIAL) {
-    empezarJuego();
-    return;
-  }
-  paginaTutorial = constrain(nueva, 0, PAGINAS_TUTORIAL - 1);
-}
-
 // ---------- Entrada en las pantallas de menú ----------
 
 function clicEnMenu() {
@@ -664,15 +629,10 @@ function clicEnMenu() {
     if (clicEnSonido()) return;   // barras de volumen
     if (botonContinuar != null && botonContinuar.contiene(mouseX, mouseY)) continuarJuego();
     else if (botonJugar.contiene(mouseX, mouseY)) empezarJuego();
-    else if (botonComoJugar.contiene(mouseX, mouseY)) irAlTutorial();
+    else if (botonComoJugar.contiene(mouseX, mouseY)) empezarTutorial();   // Tutorial
     else if (botonHadaDiseno.contiene(mouseX, mouseY)) irAlDisenoHada();
   } else if (pantalla == PANTALLA_HADA) {
     clicEnHada();   // DisenoHada
-  } else if (pantalla == PANTALLA_TUTORIAL) {
-    crearBotonesTutorial();
-    if (botonVolver.contiene(mouseX, mouseY)) irAlInicio();
-    else if (botonAnterior.contiene(mouseX, mouseY)) cambiarPaginaTutorial(-1);
-    else if (botonSiguiente.contiene(mouseX, mouseY)) cambiarPaginaTutorial(1);
   }
 }
 
@@ -686,15 +646,10 @@ function teclaEnMenu() {
     if (key == ENTER || key == RETURN || key == ' ') {
       if (hayPartidaEnCurso) continuarJuego(); else empezarJuego();
     }
-    if (key == 'h' || key == 'H') irAlTutorial();
+    if (key == 'h' || key == 'H') empezarTutorial();   // Tutorial
     if (key == 'c' || key == 'C') irAlDisenoHada();   // crear la hada
   } else if (pantalla == PANTALLA_HADA) {
     teclaEnHada();   // DisenoHada
-  } else if (pantalla == PANTALLA_TUTORIAL) {
-    if (key == CODED && keyCode == RIGHT_ARROW) cambiarPaginaTutorial(1);
-    if (key == CODED && keyCode == LEFT_ARROW)  cambiarPaginaTutorial(-1);
-    if (key == ENTER || key == RETURN || key == ' ') cambiarPaginaTutorial(1);
-    if (key == ESC) irAlInicio();
   }
 }
 
@@ -869,221 +824,6 @@ function dibujarInicio() {
   lineasCRT();
 }
 
-function dibujarTutorial() {
-  dibujarFondoMenu();
-  crearBotonesTutorial();
-
-  let x = 150, y = 40, ancho = width - 300, alto = height - 80;
-  marcoArcade(x, y, ancho, alto, COLOR_HADA);
-
-  // Indicador de página: cuadritos
-  for (let i = 0; i < PAGINAS_TUTORIAL; i++) {
-    noStroke();
-    fill(i == paginaTutorial ? COLOR_HADA : color(255, 50));
-    rect(width / 2 - PAGINAS_TUTORIAL * 14 + i * 28, y + 18, 16, 8);
-  }
-
-  textFont(fuenteTexto);
-  switch (paginaTutorial) {
-    case 0: paginaObjetivo(x, y);     break;
-    case 1: paginaEcosistema(x, y);   break;
-    case 2: paginaAmenazas(x, y);     break;
-    case 3: paginaHerramientas(x, y); break;
-    case 4: paginaRitmo(x, y);        break;
-  }
-
-  botonVolver.dibujar();
-  if (paginaTutorial > 0) botonAnterior.dibujar();
-  botonSiguiente.dibujar();
-  textoPixel((paginaTutorial + 1) + "/" + PAGINAS_TUTORIAL, x + ancho - 20, y + 16, 8, COLOR_GRIS, RIGHT);
-  textAlign(LEFT, TOP);
-  textFont(fuenteTexto);
-  textSize(14);
-  lineasCRT();
-}
-
-// ---------- Ayudas para las páginas ----------
-
-function tituloPagina(titulo, x, y) {
-  tituloArcade(titulo.toUpperCase(), width / 2, y + 44, 24, COLOR_HADA);
-  textFont(fuenteTexto);
-}
-
-// Texto con ajuste de línea dentro de una caja
-function parrafo(texto, x, y, ancho, tono, tam) {
-  fill(tono);
-  textSize(tam);
-  textAlign(LEFT, TOP);
-  text(texto, x, y, ancho, 400);
-}
-
-// Sprite grande (escala entera = nítido) con etiqueta debajo
-function spriteConNombre(spr, cx, cy, escala, nombre, tono, brillo) {
-  let lado = 16 * escala;
-  if (brillo != 0) dibujarBrillo(cx, cy, lado * 2.2, brillo, 140);
-  if (spr != null) image(spr, cx - lado / 2, cy - lado / 2, lado, lado);
-  textoPixel(nombre.toUpperCase(), cx, cy + lado / 2 + 8, 8, tono, CENTER);
-  textFont(fuenteTexto);
-}
-
-function flecha(x1, y1, x2, y2) {
-  stroke(COLOR_INTERFAZ, 160);
-  strokeWeight(2);
-  line(x1, y1, x2, y2);
-  let a = atan2(y2 - y1, x2 - x1);
-  line(x2, y2, x2 - 10 * cos(a - 0.4), y2 - 10 * sin(a - 0.4));
-  line(x2, y2, x2 - 10 * cos(a + 0.4), y2 - 10 * sin(a + 0.4));
-  noStroke();
-}
-
-// ---------- Página 1: el objetivo y su condición ----------
-function paginaObjetivo(x, y) {
-  tituloPagina("Tu objetivo", x, y);
-  // Ilustración: hada encendida -> hada apagada
-  spriteConNombre(sprHadaBrillo, x + 130, y + 230, 6, "encendida", COLOR_LUZ, COLOR_LUZ);
-  flecha(x + 205, y + 230, x + 275, y + 230);
-  spriteConNombre(sprHadaApagada, x + 350, y + 230, 6, "apagada", color(160), 0);
-
-  let tx = x + 470, ancho = 400;
-  parrafo("Eres el Guardián del Bosque.", tx, y + 110, ancho, COLOR_INTERFAZ, 18);
-  fill(COLOR_ARBOL);
-  textSize(15);
-  text("CONDICIÓN PARA SEGUIR JUGANDO", tx, y + 150);
-  parrafo("El bosque vive mientras quede AL MENOS UN HADA ENCENDIDA. Si se apaga la última, el bosque se apaga y termina la partida.",
-          tx, y + 172, ancho, COLOR_INTERFAZ, 16);
-  parrafo("Cada hada gasta luz al vivir y la recupera comiendo en las flores. Se apaga si se queda sin luz o si la atrapa un cazador.",
-          tx, y + 252, ancho, color(255, 190), 15);
-  fill(COLOR_HADA);
-  textSize(16);
-  text("Puntaje = segundos + 10 × récord de hadas vivas", tx, y + 330);
-  parrafo("No controlas a las hadas: ellas deciden solas. Tú cuidas el bosque y eliges sus prioridades.",
-          tx, y + 362, ancho, color(255, 150), 14);
-}
-
-// ---------- Página 2: el ciclo de la luz ----------
-function paginaEcosistema(x, y) {
-  tituloPagina("El ciclo de la luz", x, y);
-  let fy = y + 170;
-  spriteConNombre(sprFlor,  x + 110, fy, 4, "Flor", COLOR_FLOR, COLOR_FLOR);
-  flecha(x + 160, fy, x + 230, fy);
-  spriteConNombre(sprHada,  x + 290, fy, 4, "Hada", COLOR_HADA, COLOR_LUZ);
-  flecha(x + 340, fy - 10, x + 430, fy - 50);
-  flecha(x + 340, fy + 10, x + 430, fy + 50);
-  spriteConNombre(sprArbol,   x + 500, fy - 70, 4, "Árbol Madre", COLOR_ARBOL, COLOR_ARBOL);
-  spriteConNombre(sprCapullo, x + 500, fy + 80, 4, "Capullo", COLOR_HADA, COLOR_HADA);
-
-  let tx = x + 600, ancho = 280;
-  parrafo("Las FLORES dan luz (recurso). Cuando se apagan tardan de 45 a 75 s en recargarse, y hay más lejos del árbol. Si el Trampero las destruye, rebrotan con hadas en CUIDAR o comprando una flor [4].",
-          tx, y + 100, ancho, COLOR_FLOR, 14);
-  parrafo("Las HADAS comen, se guardan una reserva y llevan el resto (agentes).",
-          tx, y + 214, ancho, COLOR_HADA, 14);
-  parrafo("El ÁRBOL MADRE guarda esa luz: con ella pagas tus defensas (generador).",
-          tx, y + 270, ancho, COLOR_ARBOL, 14);
-  parrafo("El CAPULLO, con 150 de luz, crea un hada nueva (origen).",
-          tx, y + 326, ancho, COLOR_HADA, 14);
-
-  // Estados de la flor
-  textoPixel("ESTADOS DE LA FLOR", x + 230, y + 330, 8, COLOR_FLOR, CENTER);
-  spriteConNombre(sprFlor,        x + 110, y + 390, 3, "llena", COLOR_FLOR, 0);
-  spriteConNombre(sprFlorApagada, x + 230, y + 390, 3, "apagada", COLOR_GRIS, 0);
-  spriteConNombre(sprSemilla,     x + 350, y + 390, 3, "destruida", COLOR_ARBOL, 0);
-}
-
-// ---------- Página 3: las amenazas ----------
-function paginaAmenazas(x, y) {
-  tituloPagina("Las amenazas", x, y);
-  let col = (width - 300) / 4.0;
-  let fy = y + 175;
-  spriteConNombre(sprHadaApagada, x + col * 0.5, fy, 4, "Hambre", color(170), 0);
-  spriteConNombre(sprVeloz,       x + col * 1.5, fy, 4, "Veloz (A*)", COLOR_CAZADOR, COLOR_CAZADOR);
-  spriteConNombre(sprTrampero,    x + col * 2.5, fy, 4, "Trampero (Dijkstra)", COLOR_CAZADOR, COLOR_CAZADOR);
-  spriteConNombre(sprRastreador,  x + col * 3.5, fy, 4, "Rastreador (BFS)", COLOR_CAZADOR, COLOR_CAZADOR);
-
-  let ty = y + 260, ancho = col - 24;
-  parrafo("Si un hada no encuentra flores, se queda sin luz.\n\nSi no hay flores, el Árbol las alimenta con su luz: no la gastes toda.",
-          x + 12, ty, ancho, color(255, 200), 14);
-  parrafo("Más rápido que las hadas: cada golpe les quita 50 de luz.\n\nLas que guardan mucha luz aguantan el golpe; un hongo lo confunde.",
-          x + col + 12, ty, ancho, color(255, 200), 14);
-  parrafo("No ataca hadas: DESTRUYE flores, eligiendo la más barata de alcanzar.\n\nRodea las flores con hongos; las hadas en Cuidar las hacen rebrotar.",
-          x + col * 2 + 12, ty, ancho, color(255, 200), 14);
-  parrafo("Casi tan rápido como un hada y muy terco.\n\nSi el hada huye a tiempo, se cansa y la deja; los faroles lo distraen.",
-          x + col * 3 + 12, ty, ancho, color(255, 200), 14);
-}
-
-// ---------- Página 4: tus herramientas ----------
-function paginaHerramientas(x, y) {
-  tituloPagina("Tus herramientas", x, y);
-  spriteConNombre(sprHongo,   x + 110, y + 135, 3, "[1] Hongo · 10", COLOR_HADA, 0);
-  spriteConNombre(sprFarol,   x + 110, y + 225, 3, "[2] Farol · 30", COLOR_ARBOL, COLOR_ARBOL);
-  spriteConNombre(sprCapullo, x + 110, y + 315, 3, "[3] Capullo · 80", COLOR_HADA, COLOR_HADA);
-  spriteConNombre(sprFlor,    x + 110, y + 405, 3, "[4] Flor · 100", COLOR_FLOR, COLOR_FLOR);
-
-  let tx = x + 230, ancho = 360;
-  parrafo("Un muro por 10 s. Si encierras a un cazador entre hongos, queda atrapado hasta que se abra el paso.",
-          tx, y + 112, ancho, COLOR_INTERFAZ, 14);
-  parrafo("Un señuelo que brilla más que cualquier hada durante 12 s: el Veloz y el Rastreador van hacia él.",
-          tx, y + 202, ancho, COLOR_INTERFAZ, 14);
-  parrafo("Otro nido (hasta 5): junta luz solo y las hadas cercanas le llevan la suya. Ahí nacen hadas nuevas.",
-          tx, y + 292, ancho, COLOR_INTERFAZ, 14);
-  parrafo("Planta una flor llena de luz. También sirve para revivir una flor destruida.",
-          tx, y + 382, ancho, COLOR_INTERFAZ, 14);
-
-  let cx = x + 620;
-  fill(COLOR_LUZ);
-  textSize(16);
-  text("Controles", cx, y + 110);
-  parrafo("Clic izquierdo: usar la herramienta\n" +
-          "Clic derecho + arrastrar: mover la vista\n" +
-          "WASD o flechas: mover la vista\n" +
-          "Rueda del mouse: zoom\n" +
-          "[C] centrar en el árbol   [0] ver todo\n" +
-          "[V] ver las rutas de los algoritmos\n" +
-          "[P] pausa   [Esc] volver al inicio",
-          cx, y + 138, 250, color(255, 200), 14);
-}
-
-// ---------- Página 5: prioridades y ritmo ----------
-function paginaRitmo(x, y) {
-  tituloPagina("Prioridades y ritmo", x, y);
-
-  // Mini sliders de ejemplo
-  let sx = x + 60, sw = 330;
-  fill(COLOR_INTERFAZ);
-  textSize(16);
-  text("Prioridades de las hadas · 10 puntos", sx, y + 110);
-  dibujarMiniSlider("Alimentarse", 4, COLOR_FLOR, sx, y + 150, sw);
-  dibujarMiniSlider("Cuidar", 1, COLOR_ARBOL, sx, y + 190, sw);
-  dibujarMiniSlider("Reproducirse", 1, COLOR_HADA, sx, y + 230, sw);
-  dibujarMiniSlider("Huir", 4, COLOR_LUZ, sx, y + 270, sw);
-  parrafo("Subir uno baja los otros.\nALIMENTARSE: guardan más luz y aguantan golpes, pero brillan más.\nCUIDAR: reviven flores destruidas y recargan apagadas.\nREPRODUCIR: más hadas, pero menos luz al Árbol (de noche cuesta más).\nHUIR: escapan antes, pero no se alejan del Árbol a buscar flores.",
-          sx, y + 296, sw + 30, color(255, 200), 13);
-  fill(COLOR_ARBOL);
-  textSize(15);
-  text("Cada noche pide otras prioridades: cámbialas.", sx, y + 400);
-
-  // Fases
-  let fx = x + 470;
-  if (sprSol != null) image(sprSol, fx, y + 104, 32, 32);
-  if (sprLuna != null) image(sprLuna, fx + 40, y + 104, 32, 32);
-  fill(COLOR_INTERFAZ);
-  textSize(16);
-  text("Día y noche", fx + 84, y + 110);
-  parrafo("De DÍA recoges luz y preparas defensas; arriba a la derecha ves qué cazadores traerá la noche. De NOCHE llegan en tandas, pero abren las flores de luna.",
-          fx, y + 150, 400, color(255, 200), 14);
-  parrafo("Cada noche es más larga y trae más cazadores, y más rápidos. Si no ven ninguna hada, marchan al Árbol y le roban luz.",
-          fx, y + 226, 400, COLOR_ARBOL, 14);
-  parrafo("Los días se acortan. Mira los avisos sobre las prioridades: te dicen qué está en peligro.", fx, y + 300, 400, COLOR_LUZ, 14);
-  parrafo("RIVALES EN LÍNEA: de día puedes mandarle un cazador a otro jugador (60 de luz, uno por ronda). Le llega en su siguiente noche.",
-          fx, y + 360, 400, COLOR_CAZADOR, 14);
-}
-
-function dibujarMiniSlider(nombre, valor, tono, x, y, ancho) {
-  textoPixel(nombre.toUpperCase(), x, y - 14, 8, tono);
-  textoPixel(valor + " PTS", x + ancho, y - 14, 8, COLOR_INTERFAZ, RIGHT);
-  barraSegmentada(x, y, ancho, 14, valor / 10.0, 10, tono);
-  textFont(fuenteTexto);
-}
-
 // ==================================================
 // Panel de RIVALES EN LÍNEA (debajo del recuadro de fase)
 // ==================================================
@@ -1101,6 +841,7 @@ function altoPanelRivales() { return 36 + max(1, filasRivales()) * ALTO_FILA_RIV
 
 function sobrePanelRivales() {
   if (!hayFirebase()) return false;
+  if (modoTutorial && !tutorialMuestraRivales()) return false;   // en el tutorial solo se ve en su paso
   xPanelRivales();   // deja el botón en su lugar
   if (plegableRivales.sobreBoton()) return true;
   if (plegableRivales.escondido()) return false;
@@ -1115,6 +856,7 @@ function yBotonEnvio(fila) { return yPanelRivales() + 36 + fila * ALTO_FILA_RIVA
 function clicEnRivales() {
   if (!sobrePanelRivales()) return false;
   if (plegableRivales.clic()) return true;   // mostrar u ocultar el panel
+  if (modoTutorial) return true;             // en la práctica no se envía nada de verdad
   let lista = rivales;
   for (let i = 0; i < min(MAX_FILAS_RIVALES, lista.size()); i++) {
     for (let tipo = 0; tipo < 3; tipo++) {
@@ -1229,6 +971,5 @@ function iniciarInterfaz() {
     new Slider("Reproducirse", "más hadas, menos luz al Árbol", puntosReproducirse, COLOR_HADA),
     new Slider("Huir",         "huyen antes de los cazadores", puntosHuir, COLOR_LUZ)
   ]);
-  sliderMusica  = new Slider("Música",  "", 5, COLOR_HADA);
   sliderEfectos = new Slider("Efectos", "", 8, COLOR_LUZ);
 }

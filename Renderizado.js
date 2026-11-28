@@ -397,6 +397,9 @@ function dibujarCazadores() {
     // Un "?" encima cuando el Veloz está confundido o cuando quedó encerrado
     if (cz.confundido() || cz.encerrado) {
       textoPixel("?", cz.x, y - 10, 8, color(255, alfa), CENTER);
+    } else if (cz.ladron) {
+      // Va por la luz del Árbol: se marca en rojo para que el Guardián lo vea venir (también de noche)
+      textoPixel("LADRON", cz.x, y - 10, 8, color(COLOR_CAZADOR, alfa), CENTER);
     } else if (!cz.enviadoPor.equals("")) {
       // Lo mandó otro jugador: su nombre encima
       textoPixel(cz.enviadoPor.toUpperCase(), cz.x, y - 10, 8, color(COLOR_CAZADOR, alfa), CENTER);
@@ -485,7 +488,7 @@ function dibujarEstado() {
 
   if (mostrarRutas) dibujarPanelAlgoritmos();
   dibujarFase();
-  if (hayFirebase()) dibujarRivales();
+  if (hayFirebase() && (!modoTutorial || tutorialMuestraRivales())) dibujarRivales();   // Tutorial
   prioridades.dibujar();          // Interfaz: sliders
   dibujarAvisosColonia();         // qué está bajo presión
   dibujarBarraHerramientas();
@@ -578,13 +581,13 @@ function dibujarAyuda() {
   let filas = [
     [ "CLIC IZQ.",     "Usar la herramienta (o mover los sliders)" ],
     [ "1 a 4",         "Hongo, farol, capullo o flor" ],
-    [ "CLIC DER.",     "Arrastrar para mover la vista (también WASD o flechas)" ],
+    [ "CLIC DER.",     "Arrastrar para mover la vista" ],
     [ "RUEDA",         "Acercar y alejar" ],
     [ "C / 0",         "Centrar en el árbol / ver todo el bosque" ],
     [ "V",             "Ver las rutas de los algoritmos y cuántas celdas revisan" ],
     [ "G",             "Mostrar u ocultar la retícula" ],
     [ "P",             "Pausa" ],
-    [ "X",             "Sonido: música y efectos / solo efectos / silencio" ],
+    [ "X",             "Sonido: encender o apagar los efectos" ],
     [ "R",             "Bosque al azar (práctica: no entra al ranking)" ],
     [ "E / T / B",     "Hacer aparecer un Veloz / Trampero / Rastreador" ],
     [ "RIVALES",       "Clic en un cazador junto a un rival: se lo envías (de día)" ],

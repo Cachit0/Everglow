@@ -2,8 +2,10 @@
 // DISEÑO DE LA HADA: el jugador define el estilo de su familia
 // ==================================================
 // Cuatro sliders (Cuerpo, Alas, Brillo, Variedad) cambian la Familia (ADN.pde).
-// El jugador tiene PUNTOS_CREACION (20) puntos para repartir: un rasgo solo puede
-// subir si quedan puntos libres, así que hay que elegir qué le conviene más.
+// El jugador tiene PUNTOS_CREACION (20) puntos para repartir. La primera vez todos
+// los rasgos empiezan en 0: el jugador decide cómo reparte TODOS sus puntos.
+// Mover un rasgo nunca cambia los otros: solo puede subir si quedan puntos libres,
+// así que hay que elegir qué le conviene más.
 // A la derecha se ve una muestra de 10 hadas de esa familia: se parecen entre
 // sí, pero ninguna es igual. Al mover un slider, la muestra se transforma
 // (las semillas no cambian). "Remezclar" saca hadas distintas del mismo estilo.
@@ -21,6 +23,7 @@ let botonHadaAzar, botonHadaRemezclar, botonHadaListo;
 const HADA_PANEL_X = 50, HADA_PANEL_Y = 100, HADA_PANEL_ANCHO = 500, HADA_PANEL_ALTO = 490;
 const ALTO_FILA_RASGO = 62;               // separación entre sliders del diseño
 let avisoSinPuntosHasta = 0;                    // millis() hasta el que se muestra "sin puntos"
+let hadaCreada = false;                         // ¿el jugador ya creó su hada alguna vez? (se guarda en Red)
 
 
 // ---------- Entrar y salir ----------
@@ -30,6 +33,11 @@ function irAlDisenoHada() {
   arrastrandoHada = -1;
   if (slidersHada == null) {
     crearSlidersHada();
+    if (!hadaCreada) {
+      // Primera vez: ningún punto repartido, todos libres
+      for (const s of slidersHada) s.valor = 0;
+      leerSlidersHada();
+    }
     remezclarMuestra();
   } else {
     // Por si la familia cambió desde afuera (por ejemplo al cargar usuario.json)
@@ -39,6 +47,7 @@ function irAlDisenoHada() {
 }
 
 function terminarDisenoHada() {
+  hadaCreada = true;  // desde ahora se respeta lo que eligió
   guardarUsuario();   // Red: guarda el nombre y el estilo de la familia en usuario.json
   irAlInicio();
 }
